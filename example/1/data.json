@@ -1,0 +1,22 @@
+[
+    {
+        "name":"field1[10:0]",
+        "value":"0x1F0"
+        "descr":"this is field 11 bits"
+    },
+    {
+        "name":"field2[3:0]",
+        "value":10,
+        "descr":"this is field 4 bits"
+    },
+    {
+        "name":"bitA",
+        "value":false,
+        "descr":"this is bit A"
+    },
+    {
+        "name":"bitB",
+        "value":true,
+        "descr":"this is bit B"
+    }
+]

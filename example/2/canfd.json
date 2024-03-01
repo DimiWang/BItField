@@ -1,0 +1,38 @@
+[
+    {
+        "name":"id[11]",
+        "descr":"11 bit idntifier"
+    },
+    {
+        "name":"rrs"
+    },
+    {
+        "name":"ide"
+    },
+    {
+        "name":"fdf"
+    },
+    {
+        "name":"r"
+    },
+    {
+        "name":"brs"
+    },
+    {
+        "name":"esi"
+    },
+    {
+        "name":"dlc[4]"
+    },
+    {
+        "name":"data[16]",
+        "descr":"data 2 bytes - example"
+    },
+    {
+        "name":"crc[17]",
+        "descr":"crc 17 bits"
+    },    
+    {
+        "name":"ack"
+    }
+]
