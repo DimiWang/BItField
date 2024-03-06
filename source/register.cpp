@@ -126,14 +126,14 @@ bool Register::loadJsonData(const QByteArray &json_data, quint32 options )
 
     const QJsonArray fields_array = jsonDoc.array();
     for(int i=0;i<fields_array.count();i++){
-        const QJsonObject field = fields_array[i].toObject();
-        QStringList available_keys = field.keys();
+        const QJsonObject field_obj = fields_array[i].toObject();
+        QStringList available_keys = field_obj.keys();
 
         if(available_keys.contains("offset")){
             quint32 offset;
-            if(field["offset"].isString())
-                offset = Register::strToUInt(field["offset"].toString());
-            else offset = (quint32)field["offset"].toInt();
+            if(field_obj["offset"].isString())
+                offset = Register::strToUInt(field_obj["offset"].toString());
+            else offset = (quint32)field_obj["offset"].toInt();
             if((quint32)size() < offset+1 ){
                moveOffset(offset);
 
@@ -150,37 +150,66 @@ bool Register::loadJsonData(const QByteArray &json_data, quint32 options )
         }
         available_keys.removeOne("name");
 
-        const QString field_name = field["name"].toString();
+        // start to create a field and give a name
+        const QString field_name = field_obj["name"].toString();
         BitField::Parser parser(field_name.toLatin1().constData());
-        BitField *f = BitField::makeField(field_name, &parser);
-        if(f != 0){
-            f->setValue(parser.value());
-            f->setConstant(parser.is_value_constant());
+        BitField *f = 0;
 
-            if(options &AbsoluteRange && parser.ranges() == 2){
-                int lsb = parser.lsb() + m_offset;
-                if(size() < lsb+1 ){
-                    resize(lsb);
-                }
+        const bool name_exist = contains( parser.name() );
+
+        // on AllowSame name when we add bits to existing
+        if( options &AllowSameName){
+            if(name_exist)
+                f = field(parser.name());
+            else
+                //first field when AllowSameName mode
+              f = BitField::makeField(field_name, &parser);
+        }
+
+        // always make a new field but rename if exist
+        else{
+            f = BitField::makeField(field_name, &parser);
+            // make another field with the same name
+            int i=0;
+            if(name_exist){
+            QString another_name = parser.name();
+              while(contains(another_name))  {
+                  another_name = QString("%1_%2").arg(parser.name()).arg(i);
+                    i++;
+              }
+              //rename
+              f->setName(another_name);
             }
-            //--- todo AllowSameName
+        }
+
+
+
+        if(f != 0){
+                if(options &AbsoluteRange && parser.ranges() >0){
+                    int lsb = parser.lsb() + m_offset;
+                    if(size() < lsb+1 ){
+                        resize(lsb);
+                    }
+                }
+
+
 
             while(available_keys.count()){
                 const QString key = available_keys.first();
                 if( key == "descr"){
-                    f->setDescription(field[key].toString());
+                    f->setDescription(field_obj[key].toString());
                 }
                 else if(key == "value"){
-                    if(field[key].isString())
-                        f->setValue(Register::strToUInt(field[key].toString()));
+                    if(field_obj[key].isString())
+                        f->setValue(Register::strToUInt(field_obj[key].toString()));
                     else
-                        f->setValue((quint32)field[key].toInt());
+                        f->setValue((quint32)field_obj[key].toInt());
                 }
                 else if(key == "const"){
-                    f->setConstant(field["const"].toBool(false));
+                    f->setConstant(field_obj["const"].toBool(false));
                 }
                 else{
-                    f->setExtra(key, field[key].toVariant());
+                    f->setExtra(key, field_obj[key].toVariant());
                 }
                 available_keys.removeFirst();
             }//while

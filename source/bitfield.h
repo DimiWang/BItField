@@ -59,11 +59,12 @@ public:
         bool m_ok;
         qint32 m_range_lsb;
         qint32 m_range_msb;
-        qint32 m_value_u32;
+        qint32 m_bits_count;
+        qint32 m_value_u32;        
         bool checkAreaCorrect(const char c, int len, Area area);
     public:
-        Parser(const char*p = 0);
-        bool load(const char*);
+        Parser(const char*p = 0, bool absolute_range = false);
+        bool load(const char*, bool absolute_range = false);
         qint32 lsb() const {return m_range_lsb;}
         qint32 msb() const {return m_range_msb;}
         char *name() {return m_captured[0];}
@@ -75,9 +76,10 @@ public:
         bool is_value_constant(){return m_value_readonly;}
         bool has_value() {return m_has_value;}
         bool is_ok() const {return m_ok;}
+        qint32 bits_count() const {return m_bits_count;}
         void clear();
     };
-    static BitField* makeField(const QString &str, Parser *parser);
+    static BitField* makeField(const QString &str, Parser *parser=0, BitField *bitfield=0);
 protected:
 
     /* sets group id */

@@ -55,9 +55,8 @@ void BitField::setExtras(const QHash<QString, QVariant> &extras)
 }
 
 
-BitField * BitField::makeField(const QString &str, BitField::Parser *parser)
-{
-    BitField *field=0;
+BitField * BitField::makeField(const QString &str, BitField::Parser *parser, BitField *bitfield)
+{    
     bool parser_ok =false;    
     if(parser == 0) {
         parser = new BitField::Parser;
@@ -67,24 +66,26 @@ BitField * BitField::makeField(const QString &str, BitField::Parser *parser)
     }
 
     if(parser_ok){
-        int bit_count;
-        if(parser->ranges() == 2)
-            bit_count = parser->msb() - parser->lsb() + 1;
-        else bit_count = parser->lsb();
+        int bit_count = parser->bits_count();
 
         if(bit_count>0)
         {
-            field = new BitField(parser->name());
+            if(bitfield==0)
+                bitfield = new BitField(parser->name());
 
             // inflate with bits
             while(bit_count--){                
-                field->append(new Bit(false));
+                bitfield->append(new Bit(false));
             }
             if(parser->has_value())
-                field->setValue(parser->value());
+                bitfield->setValue(parser->value());
+
+            if(parser->is_value_constant())
+                bitfield->setConstant(true);
         }
     }
-    return field;
+    // field should be deleted by user
+    return bitfield;
 }
 
 
@@ -111,7 +112,7 @@ static quint32 StrToUl(const char *str){
     return result;
 }
 
-bool BitField::Parser::load(const char *pfield)
+bool BitField::Parser::load(const char *pfield, bool absolute_range)
 {    
     Area next_area = NAME;
     Area area = NAME;
@@ -120,6 +121,7 @@ bool BitField::Parser::load(const char *pfield)
     const char *p_in = pfield;
     char *p_cap = m_captured[NAME];
     bool error = false;
+    m_ok = false;
     while(*p_in && !error)
     {
         const char c = *p_in++;
@@ -168,8 +170,7 @@ bool BitField::Parser::load(const char *pfield)
             area = next_area;
         }
         else
-        {
-            qDebug()<<"[2]";
+        {            
             error =  true;
             break;
         }
@@ -179,32 +180,41 @@ bool BitField::Parser::load(const char *pfield)
         return false;
     }
 
-    //Range
-    m_range_lsb = 0;
-    m_range_msb = 0;
+    //Range    
     const char c = m_captured[RANGEA][0];
     m_by_name = ((c >= 'a' && c <= 'z') || (c>='A' && c<='Z'));
 
-    if (!m_by_name  && m_captured[RANGEA][0] != '\0')
+    if (!m_by_name  )
     {
         // "[A:B]"
-        if(m_has_range == 2 && m_captured[RANGEB][0] != '\0'){
+        if(m_has_range == 2 && m_captured[RANGEA][0] != '\0'
+                && m_captured[RANGEB][0] != '\0'){
 
             m_range_lsb = StrToUl(m_captured[RANGEA]);
             m_range_msb = StrToUl(m_captured[RANGEB]);
 
-            if (m_range_lsb > m_range_msb)
+            if(m_range_lsb<0 || m_range_msb <0) return false;
+
+            //maybe swap MSB <>LSB
+            if ( m_range_lsb > m_range_msb)
             {
                 qint32 tmp = m_range_msb;
                 m_range_msb = m_range_lsb;
-                m_range_lsb = tmp;
+                m_range_lsb = tmp;                
             }
+            m_bits_count  = m_range_msb - m_range_lsb + 1;
         }
         // "[A]"
-        else
+        else if(m_has_range == 1 && m_captured[RANGEA][0] != '\0')
         {            
-            m_range_lsb = StrToUl(m_captured[RANGEA]);
-            m_range_msb = m_range_lsb;
+            if(absolute_range){
+                m_bits_count = 1;
+                m_range_lsb = StrToUl(m_captured[RANGEA]);
+            }else{
+                m_bits_count = StrToUl(m_captured[RANGEA]);
+            }
+        }else{
+            m_bits_count = 1;
         }
     }
     /// Value
@@ -226,22 +236,23 @@ bool BitField::Parser::load(const char *pfield)
 void BitField::Parser::clear()
 {
     m_ok = false;
-    m_range_msb = 0;
-    m_range_lsb = 0;
+    m_range_msb = -1;
+    m_range_lsb = -1;
     m_value_u32 = 0;
     m_has_range = 0;
     m_has_value = false;
     m_value_readonly = false;
-    m_by_name = false;
+    m_by_name = false;    
+    m_bits_count =0;
     memset(m_captured,'\0',sizeof(m_captured));
 }
 
 
-BitField::Parser::Parser(const char *p)
+BitField::Parser::Parser(const char *p, bool absolute_range)
 {
-    clear();
+    clear();    
     if(p)
-        m_ok = load(p);
+        m_ok = load(p,absolute_range);
     else m_ok = false;
 }
 
