@@ -29,14 +29,6 @@ const char *Register::tag_readonly    = "@readonly";
 
 
 
-/****************************************************************************
- * @function name: constructor
- *
- * @param:
- *
- *  void
- * @description:
- ****************************************************************************/
 Register::Register(Register *parent, const QString &name, bool is_sub
                    , const QByteArray &init_json, quint32 load_options)
     : QObject()
@@ -55,11 +47,7 @@ Register::Register(Register *parent, const QString &name, bool is_sub
 }
 
 
-/****************************************************************************
- * copy constructor
- *     const Register &reg - register
- * @description: creates register with bits without names
- ****************************************************************************/
+
 Register::Register( Register &reg)
     : QObject()
     ,BitSet()
@@ -235,23 +223,7 @@ void Register::cond_update(bool changed)
 }
 
 
-/****************************************************************************
- * @function name: Register::addField()
- *
- * @param:
- *   const QByteArray &bitname
- * @description: Adds bit with name value automatically set to zero
- *              m_chain is a list container of single bits. each bit is represented
- *              by pointer to object Bit. So m_chain index equals to bit position in list.
- *              Bit are stored from LSB to msb.
- *              Example: Register("A[8];B[8]")
- *                       in m_chain is A(0,,,7),B(0,,,7),...
- *              name is the same.
- *              There are two types of parser used
- *              I) has format "@register=NAME;@bit=A[8] @value=123 @descr=DESCRIPTION;..."
- *              II) second format "A[8]=0;B[8]=123#DESCRIPTION;,,,"
- * @return: ( int ) number of bits added
- ****************************************************************************/
+
 bool Register::addField(const QString &fieldname, quint32 options, qint32 put_to)
 {
     int result=0;
@@ -310,28 +282,14 @@ int Register::fieldsCount() const
     return m_fields.count();
 }
 
-/****************************************************************************
- * @function name: Register::contains()
- *
- * @param:
- *      const QString &name
- * @description: if register contains bit name
- * @return: (Bit *) - bit pointer
- ****************************************************************************/
+
 bool Register::contains(const QString &name)
 {
     return field(name) != 0;
 }
 
 
-/****************************************************************************
- * @function name: Register::toString()
- *
- * @param:
- *             void
- * @description: Converts register to string
- * @return: ( const QByteArray)  -returns string
- ****************************************************************************/
+
 const QString Register::toString(const QString &format, bool skip_empty)
 {
     QString result ;
@@ -440,15 +398,7 @@ bool Register::fromString(const QString &text, const char ln_separator, const ch
 }
 
 
-/****************************************************************************
- * @function name: Register::findFieldByName - ---
- *
- * @param:
- *
- *  const QByteArray & name
- * @description:
- * @return: ( qint32 ) returns index of bit in scanchain
- ****************************************************************************/
+
 BitField* Register::field(const QString &name)
 {
     for (qint32 i = 0; i < m_fields.size(); i++)
@@ -481,20 +431,7 @@ Register *Register::makeSubRegister(Register *parent, const QString &name)
 }
 
 
-/****************************************************************************
- * @function name: Register::setValue()
- *
- * @param:
- *g
- *      QByteArray field -field name.
- *                      Format is: (I)"string[nn]" -where nn = number of bit
- *                                  'string' is not requred.this parameter
- *                                  will ignored
- *                                 (II) "string[nn:yy]" - nn:yy is a field
- *      quint32 value  -value is value to pass to a field or bit
- * @description: This function sets value to scanchain
- * @return: ( void )
- ****************************************************************************/
+
 bool Register::setFieldValue(const QString &field, quint32 value)
 {
     bool result = false;
@@ -562,15 +499,7 @@ bool Register::setFieldValue(const QString &field, quint32 value)
 
 
 
-/****************************************************************************
- * @function name: Register::value()
- *
- * @param:
- *
- *  QByteArray field - see format above
- * @description: thisfunction returns value of field or single bit
- * @return: ( quint32 ) returns value
- ****************************************************************************/
+
 quint32 Register::fieldValue(const QString &field) // ------------------------------------remake
 {
     quint32 result=0;
@@ -642,17 +571,6 @@ quint32 Register::fieldValue(const QString &field) // --------------------------
 
 
 
-/****************************************************************************
- * @function name: Register::sub()
- * @param:
- *      qint32 from - index from including itself
- *      qint32 to - index to including itself
- *              if to is higher then size() or -1
- *                   will be assigned to value size()-1
- * @description: sets value to range in register
- *
- * @return: ( void )
- ****************************************************************************/
 Register * Register::sub(qint32 from, qint32 to)
 {
     if(mp_temporary == NULL)
@@ -678,14 +596,7 @@ Register * Register::sub(qint32 from, qint32 to)
     return mp_temporary;
 }
 
-/****************************************************************************
- * @function name: Register::sub()
- * @param:
- *      const QString &bitname - bits with name
- * @description: sets value to bits with given name
- *
- * @return: ( void )
- ****************************************************************************/
+
 Register * Register::sub(const QString &fieldname)
 {
     if(mp_temporary == NULL) {
@@ -773,14 +684,6 @@ Register * Register::sub(const QString &extra_name, const QVariant &extra_value)
 }
 
 
-/****************************************************************************
- * @function name: Register::isSame()
- * @param:
- *      Register *preg - pointer to register compares with current
- * @description: returns true if register is same.
- *      Same means when register has same bit names and size
- * @return: ( bool ) true - is similar
- ****************************************************************************/
 bool Register::isSame(Register *preg)
 {
     if(BitSet::isSame(preg)){
@@ -844,13 +747,6 @@ void Register::moveOffset(unsigned int offset )
     resize(offset);
 }
 
-/****************************************************************************
- * @function name: Register::removeField(const QString &name)
- * @param:
- *        const QString &name
- * @description:
- * @return: ( quint32 )
- ****************************************************************************/
 void Register::removeField(const QString &fieldname, bool include_bits)
 {
     BitField *f = field(fieldname);
