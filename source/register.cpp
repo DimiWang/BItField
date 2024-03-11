@@ -1,4 +1,3 @@
-#if 1
 /**
  * @file:register.cpp   -
  * @description: this is class to maintain bits with names
@@ -368,7 +367,7 @@ const QString Register::toString(const QString &format, bool skip_empty)
                 dict["hex"] = QString("%1").arg(at(i)->value,0,16);
                 dict["bin"] = QString("b%1").arg(at(i)->value,0,2);
                 dict["value"]  = QString::number(at(i)->value);
-                dict["readonly"] = false;
+                dict["readonly"] = "false";
                 dict["offset"] = QString("%1").arg(bak_i,0,16);
                 dict["range"] = QString("%2:%1").arg(bak_i).arg(bak_i+_undef_size-1);
                 replaceTagsInLine(&line,dict);
@@ -883,8 +882,4 @@ quint32 Register::crc(int bits, quint32 seed, quint32 poly, bool padding, QStrin
     crc = reg.sub(0,bits-1)->toUInt();
     return crc;
 }
-
-
-
-#endif
 

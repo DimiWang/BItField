@@ -1,4 +1,3 @@
-#if 1
 /**
  * @file:register.h   -
  * @description:  this is class to maintain bits with names.
@@ -303,4 +302,3 @@ protected:
 Q_DECLARE_METATYPE(Register *)
 
 #endif // REGISTER_H
-#endif
