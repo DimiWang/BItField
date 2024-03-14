@@ -179,6 +179,8 @@ bool Register::loadJsonData(const QByteArray &json_data, quint32 options )
                     }
                 }
 
+                if(options &Default1) f->fill(1);
+                if(options &Default0) f->fill(0);
 
 
             while(available_keys.count()){
@@ -379,7 +381,7 @@ void Register::replaceTagsInLine(QString *line, QMap<QString,QString> &dict){
 bool Register::fromString(const QString &text, const char ln_separator, const char eq_separator)
 {
     bool ok=false;
-    foreach(const QString &line ,text.split(ln_separator,Qt::SkipEmptyParts))
+    foreach(const QString &line ,text.split(ln_separator,QString::SkipEmptyParts))
     {
         QStringList l = line.split(eq_separator);
         if(l.size() == 2)

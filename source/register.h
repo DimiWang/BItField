@@ -10,6 +10,10 @@
 #ifndef REGISTER_H
 #define REGISTER_H
 
+#ifndef Q_FOREACH
+#define Q_FOREACH
+#endif
+
 #include <QObject>
 class Register;
 
@@ -46,6 +50,8 @@ public:
     {
         AllowSameName = 1, /*not implemented*/
         AbsoluteRange = 2,
+        Default1 = 4,
+        Default0 = 8
     } LoadOptions;
 
     /* update policies*/
@@ -69,7 +75,7 @@ public:
     virtual ~Register();
 
     void clear();
-    bool loadJsonData(const QByteArray &json_data, quint32 opt);
+    bool loadJsonData(const QByteArray &json_data, quint32 options);
 
     /* copies register src to dst .name not copy. success when dst.size == 0 and register dst same as src*/
     void copy(Register &src);
