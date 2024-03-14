@@ -3,7 +3,6 @@ TARGET = bitfield
 CONFIG += c++11 console
 CONFIG -= app_bundle
 
-
 Release:DESTDIR = $${PWD}/release
 Release:OBJECTS_DIR = $${PWD}/release/.obj
 Release:MOC_DIR = $${PWD}/release/.moc
