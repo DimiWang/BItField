@@ -43,7 +43,8 @@ public:
     enum
     {
 
-        SubRegister = 0x10
+        SubRegister = 0x10,
+        AutoInflate = 0x20
     };
 
     typedef enum
@@ -63,7 +64,7 @@ public:
     } UpdatePolicy;
 
     /* zero constructor*/
-    explicit Register(Register *parent,
+    explicit Register(Register *parent=0,
                       const QString &name = QString(),
                       bool is_sub = false,
                       const QByteArray &init_json = QByteArray(),
@@ -234,7 +235,8 @@ signals:
     } while (0);
 
 private:
-    BitField *findFieldByBit(Bit *pbit);
+    BitField *findFieldByBit(Bit *pbit);   
+    bool parseJsonObjectAsField(const QJsonObject &field_obj, quint32 options);
 
 protected:
     /* create temporary register when is not*/

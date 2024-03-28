@@ -1,4 +1,6 @@
 #include "bitset.h"
+#include <QtEndian>
+
 BitSet::BitSet(const QString &name, int size, bool owner):
     QList<Bit*>()
    ,m_bits_owner(owner)
@@ -444,102 +446,120 @@ void BitSet::join(BitSet *preg)
         }
     }
 }
-
-QByteArray BitSet::toByteArray(BitOrder bitorder,bool contiguously)
+#include <QDebug>
+QByteArray BitSet::toByteArray(BitOrder bitorder, Endianess endianess)
 {
     QByteArray bytearray;
-    quint8 byte = 0;
-    for (qint32 byte_i = 0; byte_i < size(); )
+    quint8 byte = 0;    
+    for (qint32 i = 0; i < size()+1; i++)
     {
-        quint8 bit;
-        qint32 index = byte_i;
-        if(bitorder == MSB)
+        const bool new_byte = ((i % 8) == 0 &&i>0);
+        if ( new_byte || i==size())
         {
-            index = size() - 1 - byte_i;
-        }
-        bit = (at(index)->value != 0);
-        if(contiguously)
-        {
-            byte |= (bit<< (7-(byte_i % 8)));
-        }
-        else{
-            byte |= (bit<<    (byte_i % 8));
-        }
-        byte_i++;
-        if ( (byte_i % 8) == 0 || byte_i >= size() )
-        {
-            bytearray.append(byte);
+            bytearray.append(1,byte);
             byte = 0;
         }
+
+        qint32 index;
+        switch(bitorder){
+        case MSB:
+            index = size() - 1 - i;
+            break;
+        case LSB:
+            index = i;
+            break;
+        case MSB8:
+            index = (8*(i/8+1)-i%8-1);
+            break;
+        }
+
+        quint8 bit=0;
+        if( indexValid(index) )
+            bit = (at(index)->value != 0);        
+
+        byte |= (bit<<    (i % 8));
+    }    
+
+    switch(endianess){
+    case ENDIAN_LITTLE:
+        // no chage
+        break;
+    case ENDIAN_BIG_16BIT:
+        // TBD
+        break;
+    case ENDIAN_BIG_32BIT:
+        // TBD
+        break;
     }
+
     return bytearray;
 }
 
 bool BitSet::fromByteArray(const QByteArray &bytearray
                            , qint32 length_bits
                            , BitOrder bitorder
-                           ,bool contiguously
+                           , Endianess endianess
                            )
 {
     bool result=false;
-    qint32 bit_i = 0;
-    qint32 byte_i;
-    quint8 byte;
-    if(length_bits == -1) {
-        length_bits = bytearray.size() * 8;
+    switch(endianess){
+    case ENDIAN_LITTLE:
+        // no chage
+        break;
+    case ENDIAN_BIG_16BIT:
+        // TBD
+        break;
+    case ENDIAN_BIG_32BIT:
+        // TBD
+        break;
     }
 
-    if (( bytearray.size() * 8) >= length_bits)
-    {
+    if(length_bits == -1 || length_bits>size() ) length_bits = size();
 
-        for (qint32 i = 0; i < length_bits; i++)
-        {
-            if(i>=size()) break;
+    if(bytearray.size()>0){
+        qint32 bit_i = 0;
+        for(int i=0;i<bytearray.size();i++){
+            const quint8 byte = bytearray[i];
+            bool stop =false;
 
-            byte_i = i / 8;
-            bit_i = i % 8;
-            byte = bytearray[byte_i];
-            quint8 bit;
-            if(contiguously)
-            {
-                bit = (byte >> (7-bit_i)) & 1;
+            for(int j=0;j<8;j++){
+                quint8 bit = (byte >> j) & 1;
+                int index;
+                switch(bitorder)
+                {
+                case LSB:
+                    index = bit_i;
+                    break;
+
+                case MSB:
+                    index = size()-1-bit_i;
+                    break;
+
+                case MSB8:
+                    index = (8*(bit_i/8+1)-bit_i%8-1);
+                    break;
+                }
+
+                setBitValue(index, bit );
+                bit_i++;
+                if(bit_i>length_bits) {stop=1;break;}
             }
-            else {
-                bit = (byte >> bit_i) & 1;
-            }
-
-            switch(bitorder)
-            {
-            case LSB:
-                setBitValue(i , bit);
-                break;
-
-            case MSB:
-                setBitValue(size()-1-i , bit);
-                break;
-
-            case MSB8:
-                setBitValue((8*(i/8+1)-i%8-1),bit);
-                break;
-
-            }
-
+            if(stop) break;
         }
-        result=true;
+        result = true;
     }
-
     return result;
 }
 
 bool BitSet::fromHex(const QString &hex, qint32 length_bits
-                     , BitSet::BitOrder bitorder, bool contiguously)
+                     , BitSet::BitOrder bitorder, Endianess endianess)
 {
-    return fromByteArray(QByteArray::fromHex(hex.toLatin1()), length_bits, bitorder, contiguously);
+    return fromByteArray(QByteArray::fromHex(hex.toLatin1()), length_bits, bitorder, endianess);
 }
 
-QString BitSet::toHex(BitSet::BitOrder bitorder, bool contiguously)
+QString BitSet::toHex(BitSet::BitOrder bitorder, Endianess endianess)
 {
-    return QString(toByteArray(bitorder,contiguously).toHex());
+    return QString(toByteArray(bitorder,endianess).toHex());
 }
 
 

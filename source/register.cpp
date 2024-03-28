@@ -17,14 +17,14 @@
 #include <QJsonParseError>
 #include <QJsonValue>
 
-const char *Register::tag_purename    = "@purename";
-const char *Register::tag_name     = "@name";
-const char *Register::tag_value    = "@value";
-const char *Register::tag_value_hex = "@value_hex";
-const char *Register::tag_offset     = "@offset";
-const char *Register::tag_descr    = "@descr";
-const char *Register::tag_extras    = "@extras";
-const char *Register::tag_readonly    = "@readonly";
+//const char *Register::tag_purename    = "@purename";
+//const char *Register::tag_name     = "@name";
+//const char *Register::tag_value    = "@value";
+//const char *Register::tag_value_hex = "@value_hex";
+//const char *Register::tag_offset     = "@offset";
+//const char *Register::tag_descr    = "@descr";
+//const char *Register::tag_extras    = "@extras";
+//const char *Register::tag_readonly    = "@readonly";
 
 
 
@@ -101,6 +101,100 @@ void Register::clear()
 
 }
 
+bool Register::parseJsonObjectAsField(const QJsonObject &field_obj, quint32 options){
+    QStringList available_keys = field_obj.keys();
+
+    //mandatory field
+    if(!available_keys.contains("name")) {
+        return false;
+    }
+    // start to create a field and give a name
+    const QString field_name = field_obj["name"].toString();
+    available_keys.removeOne("name");
+
+    if(available_keys.contains("offset")){
+        quint32 offset;
+        if(field_obj["offset"].isString())
+            offset = Register::strToUInt(field_obj["offset"].toString());
+        else offset = (quint32)field_obj["offset"].toInt();
+        if((quint32)size() < offset+1 ){
+            moveOffset(offset);
+
+        }else{
+            WARNING("Can't make offset");
+        }
+        available_keys.removeOne("offset");
+    }
+
+    BitField::Parser parser(field_name.toLatin1().constData());
+    BitField *f = 0;
+
+    const bool name_exist = contains( parser.name() );
+
+    // on AllowSame name when we add bits to existing
+    if( options &AllowSameName){
+        if(name_exist)
+            f = field(parser.name());
+        else
+            //first field when AllowSameName mode
+            f = BitField::makeField(field_name, &parser);
+    }
+
+    // always make a new field but rename if exist
+    else{
+        f = BitField::makeField(field_name, &parser);
+        // make another field with the same name
+        int i=0;
+        if(name_exist){
+            QString another_name = parser.name();
+            while(contains(another_name))  {
+                another_name = QString("%1_%2").arg(parser.name()).arg(i);
+                i++;
+            }
+            //rename
+            f->setName(another_name);
+        }
+    }
+
+
+
+    if(f != 0){
+        if(options &AbsoluteRange && parser.ranges() >0){
+            int lsb = parser.lsb() + m_offset;
+            if(size() < lsb+1 ){
+                resize(lsb);
+            }
+        }
+
+        if(options &Default1) f->fill(1);
+        if(options &Default0) f->fill(0);
+
+
+        while(available_keys.count()){
+            const QString key = available_keys.first();
+            if( key == "descr"){
+                f->setDescription(field_obj[key].toString());
+            }
+            else if(key == "value"){
+                if(field_obj[key].isString())
+                    f->setValue(Register::strToUInt(field_obj[key].toString()));
+                else
+                    f->setValue((quint32)field_obj[key].toInt());
+            }
+            else if(key == "const"){
+                f->setConstant(field_obj["const"].toBool(false));
+            }
+            else{
+                f->setExtra(key, field_obj[key].toVariant());
+            }
+            available_keys.removeFirst();
+        }//while
+        addField(f);
+        return true;
+    }
+    return false;
+}
+
 bool Register::loadJsonData(const QByteArray &json_data, quint32 options )
 {
     QJsonParseError parseError;
@@ -113,96 +207,17 @@ bool Register::loadJsonData(const QByteArray &json_data, quint32 options )
 
     const QJsonArray fields_array = jsonDoc.array();
     for(int i=0;i<fields_array.count();i++){
-        const QJsonObject field_obj = fields_array[i].toObject();
-        QStringList available_keys = field_obj.keys();
 
-        if(available_keys.contains("offset")){
-            quint32 offset;
-            if(field_obj["offset"].isString())
-                offset = Register::strToUInt(field_obj["offset"].toString());
-            else offset = (quint32)field_obj["offset"].toInt();
-            if((quint32)size() < offset+1 ){
-               moveOffset(offset);
-
-            }else{
-                WARNING("Can't make offset");
-            }
-            available_keys.removeOne("offset");
+        if(fields_array[i].isString()){
+               setName(fields_array[i].toString());
         }
+        else if(fields_array[i].isObject()){
+            const QJsonObject field_obj = fields_array[i].toObject();
 
-        //mandatory field
-        if(!available_keys.contains("name")) {
-            WARNING(QString("Line %1 ignored").arg(i));
-            continue;
-        }
-        available_keys.removeOne("name");
-
-        // start to create a field and give a name
-        const QString field_name = field_obj["name"].toString();
-        BitField::Parser parser(field_name.toLatin1().constData());
-        BitField *f = 0;
-
-        const bool name_exist = contains( parser.name() );
-
-        // on AllowSame name when we add bits to existing
-        if( options &AllowSameName){
-            if(name_exist)
-                f = field(parser.name());
-            else
-                //first field when AllowSameName mode
-              f = BitField::makeField(field_name, &parser);
-        }
-
-        // always make a new field but rename if exist
-        else{
-            f = BitField::makeField(field_name, &parser);
-            // make another field with the same name
-            int i=0;
-            if(name_exist){
-            QString another_name = parser.name();
-              while(contains(another_name))  {
-                  another_name = QString("%1_%2").arg(parser.name()).arg(i);
-                    i++;
-              }
-              //rename
-              f->setName(another_name);
-            }
-        }
-
-
-
-        if(f != 0){
-                if(options &AbsoluteRange && parser.ranges() >0){
-                    int lsb = parser.lsb() + m_offset;
-                    if(size() < lsb+1 ){
-                        resize(lsb);
-                    }
-                }
-
-                if(options &Default1) f->fill(1);
-                if(options &Default0) f->fill(0);
-
-
-            while(available_keys.count()){
-                const QString key = available_keys.first();
-                if( key == "descr"){
-                    f->setDescription(field_obj[key].toString());
-                }
-                else if(key == "value"){
-                    if(field_obj[key].isString())
-                        f->setValue(Register::strToUInt(field_obj[key].toString()));
-                    else
-                        f->setValue((quint32)field_obj[key].toInt());
-                }
-                else if(key == "const"){
-                    f->setConstant(field_obj["const"].toBool(false));
-                }
-                else{
-                    f->setExtra(key, field_obj[key].toVariant());
-                }
-                available_keys.removeFirst();
-            }//while
-            addField(f);
+            // process As BIT FIELD
+            if(field_obj.keys().contains("name"))
+                if(!parseJsonObjectAsField(field_obj,  options))
+                     WARNING(QString("Line %1 ignored").arg(i));
         }
     }
     return true;
@@ -317,18 +332,21 @@ const QString Register::toString(const QString &format, bool skip_empty)
         if(pfield){
 
             if(pfield->size()>1)
-                dict["name"] = QString("%1[%2]").arg(pfield->name()).arg(pfield->size());
+                dict["1name"] = QString("%1[%2]").arg(pfield->name()).arg(pfield->size());
             else
-                dict["name"] = pfield->name();
-            dict["purename"] = pfield->name();
-            dict["hex"] = QString::number(pfield->value(),16);
-            dict["bin"] = QString("b%1").arg(pfield->value(),0,2);
-            dict["value"]  = QString::number(pfield->value());
-            dict["offset"] = QString("%1").arg(i,0,16);
-            dict["range"] = QString("%2:%1").arg(i).arg(i+pfield->size()-1);
-            dict["descr"] = pfield->description();
-            dict["extras"] = pfield->extras().join('|');
-            dict["readonly"] = QString::number(pfield->constant());
+                dict["1name"] = pfield->name();
+
+            dict["2purename"] = pfield->name();
+            dict["3hex_byte"] = pfield->toHex();
+            dict["12ascii"] = QString::fromStdString(pfield->toByteArray().toStdString());
+            dict["4hex"] = QString::number(pfield->value(),16);
+            dict["5bin"] = QString("b%1").arg(pfield->value(),0,2);
+            dict["6value"]  = QString::number(pfield->value());
+            dict["7offset"] = QString("%1").arg(i,0,16);
+            dict["8range"] = QString("%2:%1").arg(i).arg(i+pfield->size()-1);
+            dict["9descr"] = pfield->description();
+            dict["10extras"] = pfield->extras().join('|');
+            dict["11readonly"] = QString::number(pfield->constant());
 
             // replace bit extra with name
             foreach(const QString &extraname, pfield->extras())
@@ -351,14 +369,15 @@ const QString Register::toString(const QString &format, bool skip_empty)
                     }
                 }
 
-                dict["name"] = QString("_undef_[%2]").arg(_undef_size);
-                dict["purename"] = "_undef_";
-                dict["hex"] = QString("%1").arg(at(i)->value,0,16);
-                dict["bin"] = QString("b%1").arg(at(i)->value,0,2);
-                dict["value"]  = QString::number(at(i)->value);
-                dict["readonly"] = "false";
-                dict["offset"] = QString("%1").arg(bak_i,0,16);
-                dict["range"] = QString("%2:%1").arg(bak_i).arg(bak_i+_undef_size-1);
+                dict["1name"] = QString("_undef_[%2]").arg(_undef_size);
+                dict["2purename"] = "_undef_";
+                dict["3hex_byte"] = pfield->toHex();
+                dict["4hex"] = QString("%1").arg(at(i)->value,0,16);
+                dict["5bin"] = QString("b%1").arg(at(i)->value,0,2);
+                dict["6value"]  = QString::number(at(i)->value);
+                dict["11readonly"] = "false";
+                dict["7offset"] = QString("%1").arg(bak_i,0,16);
+                dict["8range"] = QString("%2:%1").arg(bak_i).arg(bak_i+_undef_size-1);
                 replaceTagsInLine(&line,dict);
                 result += line;
             }
@@ -751,7 +770,7 @@ void Register::moveOffset(unsigned int offset )
 void Register::removeField(const QString &fieldname, bool include_bits)
 {
     BitField *f = field(fieldname);
-    m_fields.removeOne(f);    
+    m_fields.removeOne(f);
     // deleting bits
     if(include_bits)    {
         while(!f->empty()){

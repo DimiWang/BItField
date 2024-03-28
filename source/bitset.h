@@ -18,6 +18,13 @@ public:
         MSB8
     } BitOrder;
 
+    typedef enum
+    {
+        ENDIAN_LITTLE,
+        ENDIAN_BIG_16BIT,
+        ENDIAN_BIG_32BIT,
+    } Endianess;
+
     BitSet(const QString &name = QString(), int size = -1, bool owner = true);
 
     BitSet(BitSet &bitset);
@@ -124,19 +131,19 @@ public:
     void join(BitSet *preg);
 
     /* converts to byte array lsb first*/
-    QByteArray toByteArray(BitOrder bitorder = LSB, bool contiguously = false);
+    QByteArray toByteArray(BitOrder bitorder = LSB, Endianess endianess= ENDIAN_LITTLE);
 
     /* converts to hexademical string*/
-    QString toHex(BitOrder bitorder = LSB, bool contiguously = false);
+    QString toHex(BitOrder bitorder = LSB, Endianess endianess= ENDIAN_LITTLE);
 
     /* loads from byte array */
     bool fromByteArray(const QByteArray &bytearray,
                        qint32 scanchain_length = -1,
                        BitOrder bitorder = LSB,
-                       bool contiguously = false);
+                       Endianess endianess= ENDIAN_LITTLE);
 
     /* from hexademical representation */
-    bool fromHex(const QString &hex, qint32 length_bits = -1, BitOrder bitorder = LSB, bool contiguously = false);
+    bool fromHex(const QString &hex, qint32 length_bits = -1, BitOrder bitorder = LSB, Endianess endianess= ENDIAN_LITTLE);
 
     /* converts to bit string format:101010111 */
     QByteArray toBitString(BitOrder bitorder = LSB);
