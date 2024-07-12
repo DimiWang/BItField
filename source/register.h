@@ -91,7 +91,7 @@ public:
     void removeField(const QString &fieldname, bool include_bits);
 
     /* adds single bit with name*/
-    bool addField(const QString &field, quint32 options, qint32 put_to = -1);
+    bool addField(const QString &field, quint32 options=0);
     void addField(BitField *bitfield);
 
     /* sets value to field (! Field is a bit or bit band )*/
@@ -175,16 +175,6 @@ public:
     /* apply current values from some extra value*/
     void applyValueFromExtra(const QString &extra_name);
 
-    /**/
-    static const char *tag_purename;
-    static const char *tag_name;
-    static const char *tag_value;
-    static const char *tag_value_hex;
-    static const char *tag_group;
-    static const char *tag_offset;
-    static const char *tag_descr;
-    static const char *tag_extras;
-    static const char *tag_readonly;
 
     /* converts to string format bit=1 */
     const QString toString(const QString &format = "@name=@value;", bool skip_empty = true);
@@ -200,6 +190,7 @@ public:
      If need to define a range use Sub reg*/
     quint32 crc(int bits, quint32 seed, quint32 poly, bool padding = true, QString *ptext = 0);
 
+    Register *temporary() {return this->mp_temporary;}
 signals:
     /* signal register is removed*/
     void removed();

@@ -17,15 +17,6 @@
 #include <QJsonParseError>
 #include <QJsonValue>
 
-//const char *Register::tag_purename    = "@purename";
-//const char *Register::tag_name     = "@name";
-//const char *Register::tag_value    = "@value";
-//const char *Register::tag_value_hex = "@value_hex";
-//const char *Register::tag_offset     = "@offset";
-//const char *Register::tag_descr    = "@descr";
-//const char *Register::tag_extras    = "@extras";
-//const char *Register::tag_readonly    = "@readonly";
-
 
 
 Register::Register(Register *parent, const QString &name, bool is_sub
@@ -104,25 +95,47 @@ void Register::clear()
 bool Register::parseJsonObjectAsField(const QJsonObject &field_obj, quint32 options){
     QStringList available_keys = field_obj.keys();
 
+    QString field_tag;
     //mandatory field
-    if(!available_keys.contains("name")) {
+    if(available_keys.contains("name")){
+        field_tag = "name";
+    }
+    else if(available_keys.contains("field")) {
+        field_tag = "field";
+    }else{
+        // not field
         return false;
     }
-    // start to create a field and give a name
-    const QString field_name = field_obj["name"].toString();
-    available_keys.removeOne("name");
+    // start to create a field and give a name    
+    const QString field_name = field_obj[field_tag].toString();
+    available_keys.removeOne(field_tag);
 
     if(available_keys.contains("offset")){
         quint32 offset;
+
+        // offset is a string for hexademical (0x...)
         if(field_obj["offset"].isString())
-            offset = Register::strToUInt(field_obj["offset"].toString());
-        else offset = (quint32)field_obj["offset"].toInt();
+        {
+            const QString offset_value = field_obj["offset"].toString();
+            if(offset_value.startsWith('B')){
+                offset = Register::strToUInt(offset_value.mid(1))*8;
+            }else
+                offset = Register::strToUInt(offset_value);
+        }
+        // offset is an integer value
+        else {
+            offset = (quint32)field_obj["offset"].toInt();
+        }
+
+        // offset should be always forward
         if((quint32)size() < offset+1 ){
             moveOffset(offset);
 
         }else{
             WARNING("Can't make offset");
         }
+
+        // this key is processed remove it from list
         available_keys.removeOne("offset");
     }
 
@@ -208,9 +221,12 @@ bool Register::loadJsonData(const QByteArray &json_data, quint32 options )
     const QJsonArray fields_array = jsonDoc.array();
     for(int i=0;i<fields_array.count();i++){
 
-        if(fields_array[i].isString()){
+        // first text field is a name
+        if(i==0 && fields_array[i].isString()){
                setName(fields_array[i].toString());
         }
+
+        // otherwise this is normal field parse (should contain 'name' identifier)
         else if(fields_array[i].isObject()){
             const QJsonObject field_obj = fields_array[i].toObject();
 
@@ -233,14 +249,14 @@ void Register::cond_update(bool changed)
     case UpdateOnChange:
         if(!changed)   break;
     case UpdateAlways:
-        __SET(name());
+        Q_EMIT __SET(name());
         break;
     }
 }
 
 
 
-bool Register::addField(const QString &fieldname, quint32 options, qint32 put_to)
+bool Register::addField(const QString &fieldname, quint32 options)
 {
     int result=0;
     if(!fieldname.isEmpty())
@@ -331,22 +347,32 @@ const QString Register::toString(const QString &format, bool skip_empty)
         // in field
         if(pfield){
 
-            if(pfield->size()>1)
-                dict["1name"] = QString("%1[%2]").arg(pfield->name()).arg(pfield->size());
-            else
-                dict["1name"] = pfield->name();
+            if(pfield->size()>1){
+                dict["name"] = QString("%1[%2]").arg(pfield->name()).arg(pfield->size());
+                dict["offset-name"] = QString("%1[%2]")
+                                        .arg(i/8,4,16,QChar('0'))
+                                        .arg(i%8);
+            }
+            else{
+                dict["name"] = pfield->name();
+                dict["offset-name"] = QString("%1[%2:%3]")
+                                        .arg(i/8,4,16,QChar('0'))
+                                        .arg(i%8)
+                                        .arg(i%8+pfield->size());
+            }
 
-            dict["2purename"] = pfield->name();
-            dict["3hex_byte"] = pfield->toHex();
-            dict["12ascii"] = QString::fromStdString(pfield->toByteArray().toStdString());
-            dict["4hex"] = QString::number(pfield->value(),16);
-            dict["5bin"] = QString("b%1").arg(pfield->value(),0,2);
-            dict["6value"]  = QString::number(pfield->value());
-            dict["7offset"] = QString("%1").arg(i,0,16);
-            dict["8range"] = QString("%2:%1").arg(i).arg(i+pfield->size()-1);
-            dict["9descr"] = pfield->description();
-            dict["10extras"] = pfield->extras().join('|');
-            dict["11readonly"] = QString::number(pfield->constant());
+            dict["purename"] = pfield->name();
+            dict["hexbyte"] = pfield->toHex();
+            dict["ascii"] = QString::fromStdString(pfield->toByteArray().toStdString());
+            dict["hex-value"] = QString::number(pfield->value(),16);
+            dict["binary"] = QString("b%1").arg(pfield->value(),0,2);
+            dict["value"]  = QString::number(pfield->value());
+            dict["dec-value"]  = QString::number(pfield->value());
+            dict["offset"] = QString("%1").arg(i,0,16);
+            dict["range"] = QString("%2:%1").arg(i).arg(i+pfield->size()-1);
+            dict["descr"] = pfield->description();
+            dict["extras"] = pfield->extras().join('|');
+            dict["rdonly"] = QString::number(pfield->constant());
 
             // replace bit extra with name
             foreach(const QString &extraname, pfield->extras())
@@ -357,6 +383,7 @@ const QString Register::toString(const QString &format, bool skip_empty)
             replaceTagsInLine(&line,dict);
             result += line;
         }
+        // not assigned to field
         else{
             if(!skip_empty){
 
@@ -369,15 +396,16 @@ const QString Register::toString(const QString &format, bool skip_empty)
                     }
                 }
 
-                dict["1name"] = QString("_undef_[%2]").arg(_undef_size);
-                dict["2purename"] = "_undef_";
-                dict["3hex_byte"] = pfield->toHex();
-                dict["4hex"] = QString("%1").arg(at(i)->value,0,16);
-                dict["5bin"] = QString("b%1").arg(at(i)->value,0,2);
-                dict["6value"]  = QString::number(at(i)->value);
-                dict["11readonly"] = "false";
-                dict["7offset"] = QString("%1").arg(bak_i,0,16);
-                dict["8range"] = QString("%2:%1").arg(bak_i).arg(bak_i+_undef_size-1);
+                dict["name"] = QString("_undef_[%2]").arg(_undef_size);
+                dict["purename"] = "_undef_";
+                dict["hexbyte"] = pfield->toHex();
+                dict["hex-value"] = QString("%1").arg(at(i)->value,0,16);
+                dict["dec-value"]  = QString::number(pfield->value());
+                dict["binary"] = QString("b%1").arg(at(i)->value,0,2);
+                dict["value"]  = QString::number(at(i)->value);
+                dict["rdonly"] = "false";
+                dict["offset"] = QString("%1").arg(bak_i,0,16);
+                dict["range"] = QString("%2:%1").arg(bak_i).arg(bak_i+_undef_size-1);
                 replaceTagsInLine(&line,dict);
                 result += line;
             }

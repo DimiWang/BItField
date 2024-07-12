@@ -176,13 +176,14 @@ bool BitField::Parser::load(const char *pfield, bool absolute_range)
     }
 
     // Range
-    const char c = m_captured[RANGEA][0];
-    m_by_name = ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'));
+    const char rng_a_1symb = m_captured[RANGEA][0];
+    const char rng_b_1symb = m_captured[RANGEB][0];
+    m_by_name = ((rng_a_1symb >= 'a' && rng_a_1symb <= 'z') || (rng_a_1symb >= 'A' && rng_a_1symb <= 'Z')) && rng_a_1symb != 'B';
 
     if (!m_by_name)
-    {
+    {        
         // "[A:B]"
-        if (m_has_range == 2 && m_captured[RANGEA][0] != '\0' && m_captured[RANGEB][0] != '\0')
+        if (m_has_range == 2 && rng_a_1symb != '\0' && rng_b_1symb != '\0')
         {
             m_range_lsb = StrToUl(m_captured[RANGEA]);
             m_range_msb = StrToUl(m_captured[RANGEB]);
@@ -200,16 +201,24 @@ bool BitField::Parser::load(const char *pfield, bool absolute_range)
             m_bits_count = m_range_msb - m_range_lsb + 1;
         }
         // "[A]"
-        else if (m_has_range == 1 && m_captured[RANGEA][0] != '\0')
+        else if (m_has_range == 1 && rng_a_1symb != '\0')
         {
-            if (absolute_range)
-            {
-                m_bits_count = 1;
-                m_range_lsb = StrToUl(m_captured[RANGEA]);
-            }
-            else
-            {
-                m_bits_count = StrToUl(m_captured[RANGEA]);
+            // in bytes
+           if(rng_a_1symb == 'B'){
+                m_bits_count =8;
+                const int cnt = StrToUl(&m_captured[RANGEA][1]);
+                if(cnt>0) m_bits_count *= cnt;
+           }
+           else{
+                if (absolute_range)
+                {
+                    m_bits_count = 1;
+                    m_range_lsb = StrToUl(m_captured[RANGEA]);
+                }
+                else
+                {
+                    m_bits_count = StrToUl(m_captured[RANGEA]);
+                }
             }
         }
         else
@@ -263,11 +272,11 @@ bool BitField::Parser::checkAreaCorrect(const char c, int len, Area area)
     {
         case NAME:
             ok = len < MAX_CAP_LEN &&
-                 ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c >= '0' && c <= '9'));
+                 ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c >= '0' && c <= '9') || c=='.');
             break;
         case RANGEA:
             ok = len < MAX_CAP_LEN &&
-                 ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c >= '0' && c <= '9'));
+                 ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c >= '0' && c <= '9') || c=='B');
             break;
         case RANGEB:
             ok = len < MAX_CAP_LEN && c >= '0' && c <= '9';

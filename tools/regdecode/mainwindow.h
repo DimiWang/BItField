@@ -26,8 +26,12 @@ public:
     void loadSettings();
     void saveSettings();
     void loadRecentFiles();
+    void setCurrentRecentStructure(const QString &filename);
     void saveRecentFiles();
+    void addRecentFiles(const QString &filename);
+    bool loadStructureFile(const QString &filename);
 
+    void applyStructure();
 private slots:
     void on_pbApply_clicked();
 
@@ -43,8 +47,6 @@ private slots:
 
     void on_cbTrim_toggled(bool checked);
 
-    void on_pbUpdate_clicked();
-
     void on_cmStructure_currentIndexChanged(int index);
 
     void on_cmStructure_activated(int index);
@@ -53,14 +55,31 @@ private slots:
 
     void on_cmItems_activated(int index);
 
-    void on_cmProcessAll_clicked();
-
-    void on_pbStoreFormat_clicked();
+    void on_cmProcessAll_clicked();    
 
     void on_pbRemoveFormat_clicked();
 
     void on_cmFormat_currentIndexChanged(int index);
     void on_cbUseWindowsCRLF_toggled(bool checked);
+
+    void on_pbReloadFile_clicked();
+
+    void saveStructureFile();
+    void saveAsStructureFile();
+
+    void on_pbFill0_clicked();
+
+    void on_cmBitRepr_currentIndexChanged(int index);
+
+    void on_pbFilter_clicked();
+
+    void on_leFilter_editingFinished();
+
+    void on_pbReload_clicked();
+
+    void on_pbReadValue_clicked();
+
+    void on_pbWriteValue_clicked();
 
 protected:
     void closeEvent(QCloseEvent *ev);
@@ -68,10 +87,13 @@ protected:
 private:
     bool m_settings_ascii_windows;
 
-    QString m_dataFilePath;
-    QString m_jsonFilePath;
+    QHash<QString,QString> m_recent_files;
+    QString m_format_file_path;
+    QString m_data_file_path;
+    int m_data_file_format;
+
     Ui::MainWindow *ui;
-    QString itemToString(BitField *f, Represent represent);
-    QString parseRegChangedParams();
+    QString representFieldAsString(Register *preg, BitField *f, Represent represent);
+    //QString parseRegChangedParams();
 };
 #endif // MAINWINDOW_H

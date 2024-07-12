@@ -13,6 +13,8 @@
 #include <QFileInfo>
 #include <QtEndian>
 #include <QInputDialog>
+#include <QAction>
+
 
 
 static Register REG(0,"",Register::AllowSameName);
@@ -23,13 +25,24 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
     QFont f = ui->teResult->font();
-    f.setFamily("Monospace");
+    f.setFamily("Consolas");
     ui->teResult->setFont(f);
-    REG.blockSignals(1);//block forever    
+    REG.blockSignals(1);//block forever
     loadSettings();
     loadRecentFiles();
-    m_dataFilePath = QDir::currentPath();
-    m_jsonFilePath = QDir::currentPath();
+    m_data_file_path = QDir::currentPath();
+    m_format_file_path = QDir::currentPath();
+
+    QAction *actSave = new QAction("Save",0);
+    QObject::connect(actSave,SIGNAL(triggered(bool)),this,SLOT(saveStructureFile()));
+    QAction *actSaveAs = new QAction("SaveAs",0);
+    QObject::connect(actSaveAs,SIGNAL(triggered(bool)),this,SLOT(saveAsStructureFile()));
+
+    ui->tbStructureButton->addAction(actSave);
+    ui->tbStructureButton->addAction(actSaveAs);
+    ui->tbStructureButton->setDefaultAction(actSave);
+
+
 }
 
 MainWindow::~MainWindow()
@@ -49,12 +62,24 @@ void MainWindow::loadSettings()
     ui->cbUseWindowsCRLF->blockSignals(1);
     ui->cbUseWindowsCRLF->setChecked(m_settings_ascii_windows);
     ui->cbUseWindowsCRLF->blockSignals(0);
+
+    settings.beginGroup("Repr");
+    ui->cmBitRepr->setCurrentIndex(settings.value("Format").toInt());
+    ui->cbDescr->setChecked(settings.value("ShowDescr").toBool());
+    ui->cbTrim->setChecked(settings.value("TrimValues").toBool());
+    settings.endGroup();
 }
 
 void MainWindow::saveSettings()
 {
     QSettings settings(QString("%2/%1.ini").arg(qApp->applicationName()).arg(qApp->applicationDirPath()));
     settings.setValue("General/ascii_windows_crlf", m_settings_ascii_windows );
+    // ----------------
+    settings.beginGroup("Repr");
+    settings.setValue("Format",ui->cmBitRepr->currentIndex());
+    settings.setValue("ShowDescr",ui->cbDescr->isChecked());
+    settings.setValue("TrimValues",ui->cbTrim->isChecked());
+    settings.endGroup();
 }
 
 void MainWindow::loadRecentFiles(){
@@ -62,29 +87,31 @@ void MainWindow::loadRecentFiles(){
 
     const QVariantList files_list = settings.value("Files/RecentFiles",QVariant()).toList();
     bool save_again = false;
-    int bak_index = ui->cmStructure->currentIndex();
+    QString bak_itemname = ui->cmStructure->currentText();
+
     ui->cmStructure->blockSignals(1);
     ui->cmStructure->clear();
     ui->cmStructure->addItem("Load...");
-    for(int i=0;i<files_list.count();i++){
-        const QString file_path = files_list.at(i).toString();
+    m_recent_files.clear();
 
-        if(QFile::exists(file_path)){
-            ui->cmStructure->addItem( QFileInfo(file_path).baseName(),file_path);
+    for(int i=0;i<files_list.count();i++){
+        QFileInfo fi(files_list.at(i).toString());
+        if(QFile::exists(fi.filePath())){
+            m_recent_files[fi.baseName()]=fi.filePath();
         }
         else save_again = true;
     }
-    if(bak_index>=0)
-        ui->cmStructure->setCurrentIndex(bak_index);
+
+
+    ui->cmStructure->addItems(m_recent_files.keys());
+    for(int i=0;i<ui->cmStructure->count();i++)
+        ui->cmStructure->setToolTip(m_recent_files[ui->cmStructure->itemText(i)]);
+
+    if(!bak_itemname.isEmpty() && ui->cmStructure->findText(bak_itemname))
+        setCurrentRecentStructure(bak_itemname);
+
     ui->cmStructure->blockSignals(0);
 
-    settings.beginGroup("Formats");
-
-    foreach(const QString &key, settings.allKeys()){
-        settings.value(key);
-        ui->cmStructure->addItem(QString("-%1").arg(key), settings.value(key).toString());
-    }
-    settings.endGroup();
 
     if(save_again){
         saveRecentFiles();
@@ -93,15 +120,28 @@ void MainWindow::loadRecentFiles(){
 
 }
 
+void MainWindow::setCurrentRecentStructure(const QString &filename)
+{
+    int index = ui->cmStructure->findText(QFileInfo(filename).baseName());
+    if(index >=0){
+        ui->cmStructure->setToolTip(filename);
+        ui->cmStructure->setCurrentIndex(index);
+    }
+}
+
 void MainWindow::on_pbApply_clicked()
 {    
-    REG.clear();
 
+    applyStructure();
+    update_content();
+}
+
+void MainWindow::applyStructure(){
     QElapsedTimer t;
     t.start();
     quint32 load_options =0;
-    if(ui->cmStructure->currentIndex()==1)
-        load_options = Register::AbsoluteRange;
+
+    REG.clear();
 
     if(!REG.loadJsonData(ui->teRegister->toPlainText().toLatin1(),load_options)){
         QMessageBox::critical(0,"Error","Error parsing file");
@@ -122,13 +162,14 @@ void MainWindow::on_pbApply_clicked()
 static bool loadData(const QString &file_name, int format){
 
     QFile f;
-    if(file_name.isEmpty()) return false;
+    if(file_name.isEmpty() || !QFile::exists(file_name)) return false;
 
     f.setFileName(file_name);
     if(QFile::exists(file_name) && f.open(QFile::ReadOnly)){
+
         switch(format){
 
-        case 0:{
+        case 0:{// ascii 32
             quint32 addr=0;
             QByteArray file_text = f.readAll();
             QByteArrayList lines;
@@ -139,22 +180,51 @@ static bool loadData(const QString &file_name, int format){
             }
             REG.fill(1);
             for(int i=0;i<lines.count();i++){
+                 bool ok= false;
+                const quint32 value = lines[i].toUInt(&ok,16);
+                if(!ok) break;
                 if(addr<(quint32)REG.size()){
-                    const quint32 value = lines[i].toUInt(0,16);
                     REG.setValue(addr,addr+32-1,value);
+                }
+                else{
+                    REG.addField( QString("_word_%3[%1]=%2").arg(32).arg(value).arg(i));
                 }
                 addr+=32;
             }
         }
             break;
 
-        case 1:{
-
+        case 1:{ //ascii 8
+            quint32 addr=0;
+            QByteArray file_text = f.readAll();
+            QByteArrayList lines;
+            if(file_text.contains(QByteArray("\r\n"))){
+                lines = file_text.replace("\r\n","\n").split('\n');
+            }else{
+                lines = file_text.split('\n');
+            }
+            REG.fill(1);
+            for(int i=0;i<lines.count();i++){
+                bool ok= false;
+                const quint32 value = lines[i].toUInt(&ok,16);
+                if(!ok) break;
+                if(addr<(quint32)REG.size()){
+                    REG.setValue(addr,addr+8-1,value);
+                }
+                else{
+                    REG.addField( QString("_byte_%3[%1]=%2").arg(8).arg(value).arg(i));
+                }
+                addr+=8;
+            }
         }
             break;
 
-        case 2:{
+        case 2:{ // binary
             QByteArray file_data = f.readAll();
+            if(file_data.count() *8 >REG.size()){
+                const QString the_rest = QString("_the_rest_[%1]").arg( file_data.count()*8 - REG.size() );
+                REG.addField(the_rest);
+            }
             REG.fromByteArray(file_data);
         }
             break;
@@ -169,50 +239,56 @@ static bool loadData(const QString &file_name, int format){
 }
 void MainWindow::on_pbLoadFile_clicked()
 {
-    QFile f;
+    bool load_data_ok = false;
+    QString filename;
     if(REG.isEmpty()){
         QMessageBox::critical(0,"reading",QString("Reg is empty"));
         return ;
     }
 
     if(ui->cmFormat->currentIndex()==0){
-        const QString filename = QFileDialog::getOpenFileName(0,"Load",m_dataFilePath,"Text(*.txt *.hex)");
-        if(loadData(filename, 0)){
-            QFileInfo fi(filename);
-            ui->lbResultFile->setText(QString("<b>%1</b>").arg(fi.baseName()));
-            m_dataFilePath = fi.filePath();
-            update_content();
-        }
-    }else if(ui->cmFormat->currentIndex()==1){
+        filename = QFileDialog::getOpenFileName(0,"Load",m_data_file_path,"Text(*.txt *.hex)");
+        load_data_ok = loadData(filename, 0);
 
+    }else if(ui->cmFormat->currentIndex()==1){
+        filename = QFileDialog::getOpenFileName(0,"Load",m_data_file_path,"Mem file ISP(*.mem)");
+        load_data_ok = loadData(filename, 1);
     }
     else{
-        const QString filename = QFileDialog::getOpenFileName(0,"Load",m_dataFilePath,"Binary (*.bin);;Sb3 files(*.sb3);;Other binary(*.*)");
-        if( loadData(filename, 2) ){
-            QFileInfo fi(filename);
-            ui->lbResultFile->setText(QString("<b>%1</b>").arg(fi.baseName()));
-            m_dataFilePath = fi.filePath();
-            update_content();
+        filename = QFileDialog::getOpenFileName(0,"Load",m_data_file_path,"Binary (*.bin);;Sb3 files(*.sb3);;Other binary(*.*)");
+        load_data_ok = loadData(filename, 2);
+    }
+    ui->pbApply->setEnabled(1);
+    if(load_data_ok){
+        QFileInfo fi(filename);
+        QFontMetrics fm(ui->lbResultFile->font());
+        setWindowTitle(fi.fileName());
+        QString text = QString("%1 (size=%2)").arg(fi.filePath()).arg(fi.size());
+        bool cutted = false;
+        while(fm.horizontalAdvance(text)>ui->lbResultFile->width()){
+            text.remove(0,3);
+            cutted = true;
         }
+        if(cutted){
+            text.insert(0,"...");
+        }
+        ui->lbResultFile->setText("<b>" + text + "</b>");
+        m_data_file_path = fi.filePath();
+        m_data_file_format  = ui->cmFormat->currentIndex();
+        update_content();
     }
 }
 
 void MainWindow::saveRecentFiles(){
     QSettings settings(QString("%2/%1.ini").arg(qApp->applicationName()).arg(qApp->applicationDirPath()));
+    const QStringList list = m_recent_files.values();
+    settings.setValue("Files/RecentFiles",list);
+}
 
-    QStringList recent_files;
-    for(int i=1;i<ui->cmStructure->count();i++){
-        if(ui->cmStructure->itemText(i)== "Load..."){
-
-        }
-        else if(ui->cmStructure->itemText(i).startsWith("-")){
-
-        }
-        else{
-            recent_files.append(ui->cmStructure->itemData(i).toString());
-        }
-        settings.setValue("Files/RecentFiles",recent_files);
-    }
+void MainWindow::addRecentFiles(const QString &filename)
+{
+    QFileInfo fi(filename);
+    m_recent_files[fi.baseName()] =fi.filePath();
 }
 
 void MainWindow::on_pbSetValue_clicked()
@@ -223,50 +299,93 @@ void MainWindow::on_pbSetValue_clicked()
 
 
 void MainWindow::on_cmStructure_activated(int index)
-{
-    QFile f;
-    if(ui->cmStructure->currentText()=="Load..."){
-        f.setFileName(QFileDialog::getOpenFileName(0,"",m_jsonFilePath,"JSON (*.json)",0));
-        if(QFile::exists(f.fileName())){
-            QFileInfo fi(f.fileName());
-            m_jsonFilePath = fi.filePath();
-            const QString item_name = fi.baseName();
-            ui->cmStructure->addItem(item_name, f.fileName());
-            if(f.open(QFile::ReadOnly))
-                ui->teRegister->setPlainText(f.readAll());
-            saveRecentFiles();
+{    
 
-            // set current item
-            ui->cmStructure->blockSignals(1);
-            ui->cmStructure->setCurrentText(item_name);
-            ui->cmStructure->blockSignals(0);
+    if(ui->cmStructure->currentIndex() == 0){
+        QString filename = QFileDialog::getOpenFileName(0,"",QFileInfo(m_format_file_path).path(),"JSON (*.json)",0);
+        if(QFile::exists(filename)){
+
+            if(loadStructureFile(filename)){
+                addRecentFiles(filename);
+                saveRecentFiles();
+                loadRecentFiles();
+
+            }
         }
     }
-    if(ui->cmStructure->currentText().startsWith("-")){
-        ui->teRegister->setPlainText(ui->cmStructure->itemData(index).toString());
-        return;
-    }
     else{
-        f.setFileName(ui->cmStructure->itemData(index).toString());
+        m_format_file_path = m_recent_files[ui->cmStructure->currentText()];
+        loadStructureFile(m_format_file_path);
     }
 
+    applyStructure();
+}
+
+bool MainWindow::loadStructureFile(const QString &filename){
+    QFile f(filename);
     if(f.open(QIODevice::ReadOnly)){
         ui->teRegister->setPlainText(f.readAll());
         f.close();
+        return true;
+    }
+    else{
+        QMessageBox::critical(0,"Error",QString("Can't load file %1").arg(filename));
+        return false;
     }
 }
 
-
-
-QString MainWindow::itemToString(BitField *pfield, Represent represent){
+QString MainWindow::representFieldAsString(Register *preg, BitField *pfield, Represent represent){
     QString result;
     QString format;
 
     if(pfield->extras().contains("color")){
-    result += QString("<span style=\"background-color:%1\">").arg(pfield->extra("color").toString());
+        result += QString("<span style=\"background-color:%1\">").arg(pfield->extra("color").toString());
     }
     const bool custom_repr = pfield->extras().contains("repr");
-    const QString offset = QString("%1").arg(REG.indexOf(pfield->first()),4,16,QChar('0'));
+
+    QString offset;
+    quint32 bitfield_offset = preg->indexOf(pfield->first());
+    if(ui->cmBitRepr->currentIndex()==0){
+        offset = QString("%1").arg(bitfield_offset,4,16,QChar('0'));
+    }
+    else if(ui->cmBitRepr->currentIndex() ==1){
+        quint32 byte_offset = bitfield_offset/8;
+        offset = QString("%1").arg(byte_offset,4,16,QChar('0'));
+    }
+    else if(ui->cmBitRepr->currentIndex() ==2){
+        quint32 byte_offset = bitfield_offset/8;
+        quint32 bit_offset = bitfield_offset%8;
+        if(pfield->size()==1){
+            offset = QString("%1[%2]").arg(byte_offset,4,16,QChar('0'))
+                    .arg(bit_offset);
+        }
+        else if(pfield->size()%8 ==0){
+            offset = QString("%1").arg(byte_offset,4,16,QChar('0'));
+        }
+        else{
+            offset = QString("%1[%3:%2]").arg(byte_offset,4,16,QChar('0'))
+                    .arg(bit_offset)
+                    .arg(bit_offset+pfield->size()-1);
+        }
+    }
+    else if(ui->cmBitRepr->currentIndex() ==3){
+
+        quint32 word_offset = bitfield_offset/8;
+        quint32 bit_offset = bitfield_offset%32;
+
+        if(pfield->size()==1){
+            offset = QString("%1[%2]").arg(word_offset,4,16,QChar('0'))
+                    .arg(bit_offset);
+        }
+        else if(pfield->size()%32 == 0){
+            offset = QString("%1").arg(word_offset,4,16,QChar('0'));
+        }
+        else{
+            offset = QString("%1[%3:%2]").arg(word_offset,4,16,QChar('0'))
+                    .arg(bit_offset)
+                    .arg(bit_offset+pfield->size()-1);
+        }
+    }
 
 
     switch(represent){
@@ -332,11 +451,18 @@ QString MainWindow::itemToString(BitField *pfield, Represent represent){
             if(ui->cbTrim->isChecked() &&hex_part.size()>10){
                 hex_part = hex_part.mid(0,10)+"...";
             }
-            result = QString(format)
-                    .arg(pfield->name())
-                    .arg(hex_part)
-                    .arg(pfield->size())
-                    .arg(offset);
+            if(pfield->size()%8 ==0)
+                result = QString(format)
+                        .arg(pfield->name())
+                        .arg(hex_part)
+                        .arg(QString("0x%1 bytes").arg(pfield->size()/8,0,16))
+                        .arg(offset);
+            else
+                result = QString(format)
+                        .arg(pfield->name())
+                        .arg(hex_part)
+                        .arg(pfield->size())
+                        .arg(offset);
 
         }
     }
@@ -358,22 +484,39 @@ void MainWindow::on_pbFill1_clicked()
 
 void MainWindow::update_content()
 {    
+    Register *r;
+    Register *r2;
+
+    if(ui->leFilter->text().isEmpty()) r = &REG;
+    else r = REG.temporary();
+
     QElapsedTimer t;
     t.start();
     analyzeChanges();
     const int bak_scroll_bar = ui->teResult->verticalScrollBar()->value();
     ui->teResult->clear();
-    Register REG2 = REG;
+    Register REG2 = *r;
     REG2.fill(1);
 
-    foreach(const QString &item, REG.fieldsList()){
-        if(REG.field(item)->toByteArray() == REG2.field(item)->toByteArray()){
-            ui->teResult->appendHtml(itemToString(REG.field(item),AS_UNCHANGED));
-        }
-        else{
-            ui->teResult->appendHtml(itemToString(REG.field(item),AS_CHANGED));
+    foreach(const QString &item, r->fieldsList()){
+        if(REG.field(item)->toByteArray() != REG2.field(item)->toByteArray()
+                && ui->cbShowDiff->isChecked())
+        {
+            const QString repr = representFieldAsString(r, r->field(item),AS_CHANGED);
+            ui->teResult->appendHtml(repr);
+        }else{
+            const QString repr = representFieldAsString(r, r->field(item),AS_UNCHANGED);
+            ui->teResult->appendHtml(repr);
         }
     }
+    // total
+    if(r->size()>0){
+        if(r->size()%8)
+            ui->teResult->appendHtml(QString("<b>___total=%1 bytes___</b>").arg(r->size()/8));
+        else
+            ui->teResult->appendHtml(QString("<b>___TOTAL=%1(0x%2)bytes or %3 bits___</b>").arg(r->size()/8).arg(r->size()/8,0,16).arg(r->size()));
+    }
+
     ui->teResult->verticalScrollBar()->setValue(bak_scroll_bar);
 }
 
@@ -384,9 +527,9 @@ void MainWindow::on_pbSaveToFile_clicked()
 
 
     if(ui->cmFormat->currentIndex()==0){
-        f.setFileName(QFileDialog::getSaveFileName(0,"",m_dataFilePath,"Text (*.txt *.hex)",0));
+        f.setFileName(QFileDialog::getSaveFileName(0,"",m_data_file_path,"Text (*.txt *.hex)",0));
         if(!f.fileName().isEmpty() ){
-            m_dataFilePath = QFileInfo(f).filePath();
+            m_data_file_path = QFileInfo(f).filePath();
             const QByteArray data_to_save = REG.toByteArray(Register::LSB);
             if(f.open(QIODevice::WriteOnly)){
                 qint32 i=0;
@@ -404,12 +547,12 @@ void MainWindow::on_pbSaveToFile_clicked()
                     // trim lines in ascii file
                     if(ui->cmTrimLines->isEnabled() && i>=ui->cmTrimLines->currentText().toUInt())
                         break;
-                    }
                 }
             }
-            else{
-                QMessageBox::critical(0,"writing",QString("Can't open file"));
-            }
+        }
+        else{
+            QMessageBox::critical(0,"writing",QString("Can't open file"));
+        }
     }
     // 8 bit
     else if(ui->cmFormat->currentIndex()==1){
@@ -417,9 +560,9 @@ void MainWindow::on_pbSaveToFile_clicked()
     }
     // binary
     else {
-        f.setFileName(QFileDialog::getSaveFileName(0,"",m_dataFilePath,"Binary (*.bin);;Sb3 files(*.sb3);;Other binary(*.*)",0));
+        f.setFileName(QFileDialog::getSaveFileName(0,"",m_data_file_path,"Binary (*.bin);;Sb3 files(*.sb3);;Other binary(*.*)",0));
         if(!f.fileName().isEmpty()){
-            m_dataFilePath = QFileInfo(f).filePath();
+            m_data_file_path = QFileInfo(f).filePath();
             if(f.open(QIODevice::WriteOnly)){
                 QByteArray data = REG.toByteArray(Register::LSB);
                 f.write(data);
@@ -435,18 +578,18 @@ typedef struct {
 }HexFile;
 QList<HexFile> m_hex_files;
 
-QString MainWindow::parseRegChangedParams(){
-    QString result;
-    QStringList items = REG.fieldsList();
-    Register REG2 = REG;
-    REG2.fill(1);
-    foreach(const QString &item,items){
-        if(REG.sub(item)->toByteArray() != REG2.sub(item)->toByteArray()){
-            result += itemToString(REG.field(item),AS_IGNORESTYLE)+"\n";
-        }
-    }
-    return result;
-}
+//QString MainWindow::parseRegChangedParams(){
+//    QString result;
+//    QStringList items = REG.fieldsList();
+//    Register REG2 = REG;
+//    REG2.fill(1);
+//    foreach(const QString &item,items){
+//        if(REG.sub(item)->toByteArray() != REG2.sub(item)->toByteArray()){
+//            result += representFieldAsString(REG.field(item),AS_IGNORESTYLE)+"\n";
+//        }
+//    }
+//    return result;
+//}
 
 
 void MainWindow::on_cbTrim_toggled(bool checked)
@@ -455,15 +598,9 @@ void MainWindow::on_cbTrim_toggled(bool checked)
 }
 
 
-void MainWindow::on_pbUpdate_clicked()
-{    
-    update_content();
-}
-
-
 void MainWindow::on_cmStructure_currentIndexChanged(int index)
 {
-
+    ui->pbApply->setEnabled(index!=0);
 }
 
 void MainWindow::on_cbDescr_toggled(bool checked)
@@ -484,27 +621,27 @@ void MainWindow::on_cmItems_activated(int index)
 
 void MainWindow::on_cmProcessAll_clicked()
 {
-    QDir directory("../ifr0");
-    const QStringList txt_files = directory.entryList(QStringList() << "*.txt",QDir::Files);
-    foreach(const QString &csv_filename, txt_files) {
-        //do whatever you need to do
+    //    QDir directory("../ifr0");
+    //    const QStringList txt_files = directory.entryList(QStringList() << "*.txt",QDir::Files);
+    //    foreach(const QString &csv_filename, txt_files) {
+    //        //do whatever you need to do
 
-        if(loadData(QString("../ifr0/%2").arg(csv_filename),0)){
-            HexFile hex_file;
-            hex_file.filename = csv_filename;
-            hex_file.data = parseRegChangedParams();
-            m_hex_files.append(hex_file);
-        }
-    }
+    //        if(loadData(QString("../ifr0/%2").arg(csv_filename),0)){
+    //            HexFile hex_file;
+    //            hex_file.filename = csv_filename;
+    //            hex_file.data = parseRegChangedParams();
+    //            m_hex_files.append(hex_file);
+    //        }
+    //    }
 
-    QFile f("output.csv");
-    if(f.open(QIODevice::WriteOnly)){
-        foreach(const HexFile &hex, m_hex_files){
-            const QString line = QString("\"%1\",\"%2\"\n").arg(hex.filename).arg(hex.data);
-            f.write(line.toLatin1());
-        }
-    }
-    f.close();
+    //    QFile f("output.csv");
+    //    if(f.open(QIODevice::WriteOnly)){
+    //        foreach(const HexFile &hex, m_hex_files){
+    //            const QString line = QString("\"%1\",\"%2\"\n").arg(hex.filename).arg(hex.data);
+    //            f.write(line.toLatin1());
+    //        }
+    //    }
+    //    f.close();
 }
 //[
 //{"name":"imageType[7:0]"},
@@ -515,24 +652,28 @@ void MainWindow::on_cmProcessAll_clicked()
 //{"name":"reserved[31:16]"}
 //]
 
-void MainWindow::on_pbStoreFormat_clicked()
-{
-    QSettings settings(QString("%2/%1.ini").arg(qApp->applicationName()).arg(qApp->applicationDirPath()));
-    bool ok;
-    const QString format_name = QInputDialog::getText(0, "Input dialog",
-                                                "Format name", QLineEdit::Normal,
-                                                "", &ok);
-    ui->cmStructure->addItem(QString("-%1").arg(format_name),ui->teRegister->toPlainText());
-    settings.setValue(QString("Formats/%2").arg(format_name),ui->teRegister->toPlainText());
-}
+
 
 
 void MainWindow::on_pbRemoveFormat_clicked()
 {
-    QSettings settings(QString("%2/%1.ini").arg(qApp->applicationName()).arg(qApp->applicationDirPath()));
-    settings.remove(QString("Formats/%2").arg(ui->cmStructure->currentText().mid(1)));
+    if(!ui->cmStructure->currentText().isEmpty()
+            && m_recent_files.contains(ui->cmStructure->currentText())){
+
+        QMessageBox msg;
+        msg.setWindowTitle("");
+        msg.setText("Delete file?");
+        msg.setStandardButtons(QMessageBox::Yes|QMessageBox::No);
+        int r = msg.exec();
+        if(r == QMessageBox::Yes)
+            QFile::remove(m_recent_files[ui->cmStructure->currentText()]);
+
+        m_recent_files.remove(ui->cmStructure->currentText());
+        saveRecentFiles();
+        loadRecentFiles();
+
+    }
     loadRecentFiles();
-    ui->cmStructure->setCurrentIndex(0);
 }
 
 
@@ -556,5 +697,109 @@ void MainWindow::on_cbUseWindowsCRLF_toggled(bool checked)
 {
     m_settings_ascii_windows = checked;
     saveSettings();
+}
+
+
+void MainWindow::on_pbReloadFile_clicked()
+{
+    loadData(m_data_file_path, m_data_file_format);
+    update_content();
+}
+
+
+void MainWindow::saveStructureFile()
+{
+    QFile f(this->m_format_file_path)  ;
+    if(f.open(QFile::WriteOnly)){
+        f.write(ui->teRegister->toPlainText().toLatin1());
+    }else{
+        QMessageBox::critical(0,"Error",QString("Can't save file %1").arg(m_format_file_path));
+    }
+    f.close();
+}
+
+void MainWindow::saveAsStructureFile()
+{
+    QString filename =  QFileDialog::getSaveFileName(0,"",QFileInfo(m_format_file_path).path(),"JSON (*.json)",0);
+
+    if(!filename.isEmpty()){
+        QFile f(filename)  ;
+        if(f.open(QFile::WriteOnly)){
+            f.write(ui->teRegister->toPlainText().toLatin1());
+            m_format_file_path  = filename;
+        }else{
+            QMessageBox::critical(0,"Error",QString("Can't save file %1").arg(m_format_file_path));
+        }
+        f.close();
+
+        QFileInfo fi(filename);
+        const QString item_name = fi.baseName();
+        ui->cmStructure->setToolTip(filename);
+        ui->cmStructure->addItem(item_name, filename);
+
+        addRecentFiles(filename);
+        saveRecentFiles();
+    }
+}
+
+
+void MainWindow::on_pbFill0_clicked()
+{
+    REG.fill(0);
+    update_content();
+}
+
+
+void MainWindow::on_cmBitRepr_currentIndexChanged(int index)
+{
+    update_content();
+}
+
+
+
+void MainWindow::on_pbFilter_clicked()
+{
+    if(!ui->leFilter->text().isEmpty()){
+        QStringList l = REG.fieldsList();
+        QRegExp match(ui->leFilter->text());
+        match.setPatternSyntax(QRegExp::Wildcard);
+        int i=0;
+        while(i<l.count()){
+            if(!match.exactMatch(l[i])) l.removeAt(i);
+            else i++;
+        }
+        REG.sub(l);
+    }
+    update_content();
+}
+
+
+void MainWindow::on_leFilter_editingFinished()
+{
+    if(ui->leFilter->text().isEmpty()){
+        update_content();
+    }
+}
+
+
+void MainWindow::on_pbReload_clicked()
+{
+    REG.clear();
+
+    applyStructure();
+    update_content();
+}
+
+
+void MainWindow::on_pbReadValue_clicked()
+{
+    ui->teHexValue->setPlainText(REG.sub(ui->cmItems->currentText())->toHex());
+}
+
+
+void MainWindow::on_pbWriteValue_clicked()
+{
+    REG.sub(ui->cmItems->currentText())->fromHex(ui->teHexValue->toPlainText());
+    update_content();
 }
 
