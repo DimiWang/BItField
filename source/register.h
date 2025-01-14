@@ -191,6 +191,7 @@ public:
     quint32 crc(int bits, quint32 seed, quint32 poly, bool padding = true, QString *ptext = 0);
 
     Register *temporary() {return this->mp_temporary;}
+
 signals:
     /* signal register is removed*/
     void removed();
@@ -227,7 +228,9 @@ signals:
 
 private:
     BitField *findFieldByBit(Bit *pbit);   
-    bool parseJsonObjectAsField(const QJsonObject &field_obj, quint32 options);
+    bool parseJsonObjectAsField(const QJsonObject &field_obj, quint32 options, QHash<QString, QVariant> &dict);
+    bool parseJsonObjectAsDict(const QJsonObject &field_obj, QHash<QString,QVariant> *dict);
+    bool parseJsonObjectAsOptions(const QJsonObject &field_obj, quint32 *options);
 
 protected:
     /* create temporary register when is not*/
